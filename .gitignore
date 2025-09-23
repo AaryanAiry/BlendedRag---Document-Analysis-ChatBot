@@ -1,0 +1,69 @@
+# Python & FastAPI
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+*.sqlite3
+*.db
+
+# Virtual Environments
+venv/
+.env/
+.venv/
+ENV/
+env.bak/
+
+# Uploaded & Generated Data
+data/uploads/
+temp/
+tmp/
+*.pdf
+parsed_docs/
+chunked_output/
+ingested_data/
+extracted_images/
+
+# Embeddings & Models
+embeddings_cache/
+models/
+sentence_transformers/
+transformers_cache/
+*.pkl
+*.npy
+*.bin
+*.safetensors
+*.h5
+*.pt
+*.pth
+
+# Logs & Reports
+logs/
+*.out
+*.err
+
+# Build & Packaging
+build/
+dist/
+*.egg-info/
+
+# OS & Editor
+.DS_Store
+*~
+.vscode/
+.idea/
+*.swp
+
+# Secrets & Config
+*.env
+*.key
+*.pem
+secrets.json
+config.json
+
+# Tests & Temp Scripts
+.coverage
+htmlcov/
+tests/__pycache__/
+dev-start.sh
+*.bak
+*.tmp
