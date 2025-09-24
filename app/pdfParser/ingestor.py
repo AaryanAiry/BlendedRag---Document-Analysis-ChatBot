@@ -1,4 +1,3 @@
-# app/pdfParser/ingestor.py
 import uuid
 import os
 from fastapi import UploadFile
@@ -8,15 +7,13 @@ from app.embeddings.embeddingClient import EmbeddingClient
 from app.storage.documentStore import documentStore
 from app.utils.logger import getLogger
 from app.retrieval.sparseRetriever import sparseRetriever
-
-# Import the shared Chroma client
 from app.chromaClient import chromaClient
 
 uploadDir = "data/uploads"
 logger = getLogger(__name__)
 embeddingClient = EmbeddingClient()
 CHUNK_SIZE = 1000
-CHUNK_OVERLAP = 200  # overlap between chunks to preserve context
+CHUNK_OVERLAP = 200
 
 async def processPdf(file: UploadFile):
     os.makedirs(uploadDir, exist_ok=True)
@@ -26,60 +23,56 @@ async def processPdf(file: UploadFile):
         filePath = os.path.join(uploadDir, f"{docId}_{file.filename}")
         logger.info(f"Starting ingestion for: {file.filename}, saving as: {filePath}")
 
-        # Save the uploaded file
+        # Save uploaded file
         contents = await file.read()
         if not contents:
             raise ValueError(f"Uploaded file is empty: {file.filename}")
         with open(filePath, "wb") as f:
             f.write(contents)
 
-        # Extract text and page count
+        # --- Step 1: Extract plain text ---
         text, pageCount = extractTextFromPdf(filePath)
         if not text:
             raise ValueError(f"No text extracted from PDF: {file.filename}")
         logger.info(f"Extracted text length: {len(text)} characters")
 
-        # Chunk text
+        # --- Step 2: Chunk text ---
         chunks = chunkText(text, chunkSize=CHUNK_SIZE, chunkOverlap=CHUNK_OVERLAP)
         logger.info(f"Generated {len(chunks)} chunks")
 
-        # Generate embeddings
+        # --- Step 3: Embeddings for chunks ---
         embeddings = embeddingClient.generateEmbeddings(chunks)
         logger.info(f"Generated embeddings for {len(chunks)} chunks")
 
-        # Prepare metadata and IDs for Chroma
-        metadatas = [
-            {
-                "docId": docId,
-                "chunkIndex": i,
-                "text": chunks[i],
-                "fileName": file.filename or "unknown.pdf",
-                "pageCount": pageCount or 0
-            } for i in range(len(chunks))
-        ]
-        ids = [f"{docId}_{i}" for i in range(len(chunks))]
+        ids = [f"{docId}_chunk_{i}" for i in range(len(chunks))]
 
-        # Build and cache BM25 index
+        # --- Step 4: BM25 sparse index ---
         sparseRetriever.indexDocument(docId, chunks, ids)
         logger.info(f"BM25 index built for docId={docId}")
 
-        # Save document in memory and Chroma
+        # --- Step 5: Save chunks to Chroma ---
+        for i, chunk in enumerate(chunks):
+            chromaClient.add_chunk(
+                chunk_id=ids[i],
+                embedding=embeddings[i].tolist(),
+                text=chunk,
+                doc_id=docId,
+                page=1  # TODO: replace with real page info when using pdfToJson
+            )
+        logger.info(f"Saved {len(chunks)} chunks to Chroma for docId={docId}")
+
+        # --- Step 6: Save in memory store ---
         documentStore.saveDocument(docId, {
             "fileName": file.filename,
             "pageCount": pageCount,
-            "chunks": [{"text": chunks[i]} for i in range(len(chunks))],
+            "chunks": [{"text": c} for c in chunks],
             "embeddings": embeddings
         })
 
-        # Add chunks to Chroma collection (use documentStore's collection to avoid duplication)
-        collection = documentStore.collection
-        collection.add(
-            ids=ids,
-            embeddings=embeddings.tolist(),  # Convert to list
-            documents=chunks,                # List of strings
-            metadatas=metadatas
-        )
-        logger.info(f"Saved {len(chunks)} chunks to Chroma for docId={docId}")
+        # --- Step 7: (future) Add tables & images ---
+        # Once pdfToJson extracts tables/images, add:
+        # chromaClient.add_table(...)
+        # chromaClient.add_image(...)
 
         return {
             "docId": docId,
@@ -91,7 +84,3 @@ async def processPdf(file: UploadFile):
     except Exception as e:
         logger.error(f"Ingestion failed for {file.filename}: {e}")
         raise
-    # finally:
-    #     # Clean up temporary file if it exists
-    #     if os.path.exists(filePath):
-    #         os.remove(filePath)

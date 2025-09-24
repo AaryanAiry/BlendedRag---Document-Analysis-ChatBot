@@ -1,7 +1,6 @@
-# app/chromaClient.py
-
 import os
-from chromadb import PersistentClient
+from chromadb import Client
+from chromadb.config import Settings
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 DB_DIR = os.path.join(ROOT_DIR, "app", "data", "chroma")
@@ -9,16 +8,16 @@ DB_DIR = os.path.join(ROOT_DIR, "app", "data", "chroma")
 class ChromaClient:
     def __init__(self, db_dir: str = DB_DIR):
         os.makedirs(db_dir, exist_ok=True)
-        self.client = PersistentClient(path=db_dir)
+
+        self.client = Client(Settings(
+            persist_directory=db_dir,
+            anonymized_telemetry=False  # Disable telemetry
+        ))
 
         # Initialize collections
-        self.chunks = self._get_or_create("chunks")
-        self.tables = self._get_or_create("tables")
-        self.images = self._get_or_create("images")
-
-    def _get_or_create(self, name: str):
-        """Create a collection if it doesn't exist, otherwise return existing one."""
-        return self.client.get_or_create_collection(name=name)
+        self.chunks = self.client.get_or_create_collection("chunks")
+        self.tables = self.client.get_or_create_collection("tables")
+        self.images = self.client.get_or_create_collection("images")
 
     # ---------------- Chunks ----------------
     def add_chunk(self, chunk_id: str, embedding: list, text: str, doc_id: str, page: int, type_: str = "text"):
@@ -39,7 +38,7 @@ class ChromaClient:
         self.tables.add(
             ids=[table_id],
             embeddings=[embedding],
-            documents=[table_json],  # Store JSON string for retrieval
+            documents=[table_json],
             metadatas=[metadata]
         )
 
@@ -47,11 +46,13 @@ class ChromaClient:
         return self.tables.query(query_embeddings=[query_embedding], n_results=n_results)
 
     # ---------------- Images ----------------
-    def add_image(self, image_id: str, embedding: list, doc_id: str, page: int):
+    def add_image(self, image_id: str, embedding: list, doc_id: str, page: int, document_ref: str = None):
         metadata = {"doc_id": doc_id, "page": page, "type": "image"}
+        doc_str = document_ref if document_ref is not None else image_id
         self.images.add(
             ids=[image_id],
             embeddings=[embedding],
+            documents=[doc_str],
             metadatas=[metadata]
         )
 
@@ -59,7 +60,7 @@ class ChromaClient:
         return self.images.query(query_embeddings=[query_embedding], n_results=n_results)
 
 
-# Debug run
+# ---------------- Debug run ----------------
 if __name__ == "__main__":
     cc = ChromaClient()
 
@@ -71,7 +72,7 @@ if __name__ == "__main__":
     # --- Test inserting a dummy chunk ---
     cc.add_chunk(
         chunk_id="test1",
-        embedding=[0.1] * 384,  # fake embedding (384-dim)
+        embedding=[0.1] * 384,
         text="Hello world, this is a test chunk.",
         doc_id="doc1",
         page=1
