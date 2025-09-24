@@ -1,4 +1,4 @@
-# tree -a -I "__pycache__|.git" > old_structure.txt 
+$ tree -a -I "__pycache__|.git|.venv" > newProjectStructure.txt 
 .
 ├── app
 │   ├── chromaClient.py
@@ -12,14 +12,17 @@
 │   │   ├── llmClient.py
 │   │   ├── models
 │   │   │   ├── __init__.py
-│   │   │   └── mistral7b
+│   │   │   └── qwen2.5-3b-instruct-q5_k_m.gguf
 │   │   ├── postProcessor.py
-│   │   └── promptTemplate.py
+│   │   ├── promptTemplate.py
+│   │   └── queryDecomposition.py
 │   ├── main.py
 │   ├── pdfParser
 │   │   ├── chunker.py
 │   │   ├── ingestor.py
+│   │   ├── jsonToPdf.py
 │   │   ├── parser.py
+│   │   ├── pdfToJson.py
 │   │   └── tests
 │   │       └── runRetrievalDemo.py
 │   ├── rag
@@ -46,26 +49,11 @@
 │   │   └── ragRoutes.py
 │   ├── schemas.py
 │   ├── scripts
-│   │   ├── app
-│   │   │   └── models
-│   │   │       └── mistral7b
-│   │   │           ├── chat_template.jinja
-│   │   │           ├── special_tokens_map.json
-│   │   │           ├── tokenizer_config.json
-│   │   │           ├── tokenizer.json
-│   │   │           └── tokenizer.model
-│   │   ├── data
-│   │   │   └── chroma
-│   │   │       └── chroma.sqlite3
 │   │   ├── debugChroma.py
 │   │   ├── dev-start.sh
 │   │   ├── downloadModel.py
 │   │   ├── ingestPdf.py
 │   │   ├── modelTest.py
-│   │   ├── pythonService
-│   │   │   └── data
-│   │   │       └── cache
-│   │   │           └── bm25
 │   │   ├── runRetrievalDemo.py
 │   │   ├── runVisualizationDemo.py
 │   │   ├── sample.pdf
@@ -85,11 +73,24 @@
 │       ├── retrievalVisualization.py
 │       ├── tableGenerator.py
 │       └── visualizer.py
-├── data
 ├── .gitignore
-├── new_structure.txt
-├── scripts
+├── newProjectStructure.txt
+├── project_structure.txt
 └── tests
-    └── testQueryDecomposition.py
+    ├── integration
+    │   ├── __init__.py
+    │   ├── test_api_endpoints.py
+    │   ├── test_pdf_pipeline.py
+    │   └── test_rag_workflow.py
+    ├── performance
+    │   ├── test_chroma_scaling.py
+    │   └── test_query_latency.py
+    ├── testQueryDecomposition.py
+    └── unit
+        ├── __init__.py
+        ├── test_Chroma.py
+        ├── test_chunker.py
+        ├── test_embedding_client.py
+        └── test_ingestor.py
 
-29 directories, 63 files
+20 directories, 73 files

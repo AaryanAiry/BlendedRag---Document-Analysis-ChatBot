@@ -6,7 +6,7 @@ import os
 logger = getLogger(__name__)
 
 class LLMClient:
-    def __init__(self, model_path: str = "models/qwen2.5-3b-instruct-q5_k_m.gguf"):
+    def __init__(self, model_path: str = "app/llm/models/qwen2.5-3b-instruct-q5_k_m.gguf"):
         """
         Initializes the LLM client for local Qwen model inference.
         Uses CPU by default. If compiled with GPU support in llama_cpp, will use GPU automatically.
