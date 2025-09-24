@@ -22,6 +22,7 @@ parsed_docs/
 chunked_output/
 ingested_data/
 extracted_images/
+project_structure.txt
 
 # Embeddings & Models
 embeddings_cache/

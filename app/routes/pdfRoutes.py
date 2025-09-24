@@ -14,7 +14,7 @@ class PDFResponse(BaseModel):
     pageCount: int
     chunks: list
 
-@router.post("")  # Explicit route without trailing slash
+@router.post("")
 async def processPdfEndpoint(file: UploadFile = File(...)):
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")

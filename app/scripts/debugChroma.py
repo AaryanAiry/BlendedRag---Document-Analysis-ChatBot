@@ -4,9 +4,8 @@ import sqlite3
 import os
 from termcolor import colored
 
-DB_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "app", "data", "chroma", "chroma.sqlite3"
-)
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+DB_PATH = os.path.join(ROOT_DIR, "app", "data", "chroma", "chroma.sqlite3")
 
 def check_db_exists():
     print(colored("Step 1: Checking if chroma.sqlite3 exists...", "cyan"))
