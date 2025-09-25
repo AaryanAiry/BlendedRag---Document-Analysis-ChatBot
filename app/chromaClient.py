@@ -2,15 +2,16 @@ import os
 from chromadb import Client
 from chromadb.config import Settings
 
-ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-DB_DIR = os.path.join(ROOT_DIR, "app", "data", "chroma")
+# ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+# DB_DIR = os.path.join(ROOT_DIR, "app", "data", "chroma")
+
+DB_DIR = "data/chroma"  # short path to avoid "File name too long"
 
 class ChromaClient:
     def __init__(self, db_dir: str = DB_DIR):
-        os.makedirs(db_dir, exist_ok=True)
+        # os.makedirs(db_dir, exist_ok=True)
 
         self.client = Client(Settings(
-            persist_directory=db_dir,
             anonymized_telemetry=False  # Disable telemetry
         ))
 
@@ -18,6 +19,9 @@ class ChromaClient:
         self.chunks = self.client.get_or_create_collection("chunks")
         self.tables = self.client.get_or_create_collection("tables")
         self.images = self.client.get_or_create_collection("images")
+
+    def get_or_create_collection(self, name: str):
+        return self.client.get_or_create_collection(name)
 
     # ---------------- Chunks ----------------
     def add_chunk(self, chunk_id: str, embedding: list, text: str, doc_id: str, page: int, type_: str = "text"):
@@ -28,6 +32,7 @@ class ChromaClient:
             documents=[text],
             metadatas=[metadata]
         )
+        print(f"✅ Chunk added: {chunk_id}, text len={len(text)}, embedding len={len(embedding)}")
 
     def query_chunks(self, query_embedding: list, n_results: int = 5):
         return self.chunks.query(query_embeddings=[query_embedding], n_results=n_results)
@@ -59,6 +64,11 @@ class ChromaClient:
     def query_images(self, query_embedding: list, n_results: int = 3):
         return self.images.query(query_embeddings=[query_embedding], n_results=n_results)
 
+    def list_collections(self):
+        return self.client.list_collections()
+    
+    def count_chunks(self):
+        return self.chunks.count()
 
 # ---------------- Debug run ----------------
 if __name__ == "__main__":
@@ -81,3 +91,5 @@ if __name__ == "__main__":
     # --- Query it back ---
     results = cc.query_chunks(query_embedding=[0.1] * 384, n_results=1)
     print("🔎 Query Results:", results)
+
+chromaClient = ChromaClient()

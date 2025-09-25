@@ -13,6 +13,8 @@ class PDFResponse(BaseModel):
     fileName: str
     pageCount: int
     chunks: list
+    tables: list = []      # NEW: include tables
+    images: list = []      # NEW: include images
 
 @router.post("")
 async def processPdfEndpoint(file: UploadFile = File(...)):
@@ -20,12 +22,17 @@ async def processPdfEndpoint(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
     try:
         uploadResult = await processPdf(file)
-        logger.info(f"Stored {len(uploadResult['chunks'])} chunks with embeddings in ChromaDB for docId: {uploadResult['docId']}")
+        logger.info(f"Stored {len(uploadResult['chunks'])} text chunks with embeddings in ChromaDB for docId: {uploadResult['docId']}")
+
+        # Retrieve structured elements from Chroma or return from uploadResult if stored
+        # Here we assume processPdf now returns images/tables alongside chunks
         return PDFResponse(
             docId=uploadResult["docId"],
             fileName=uploadResult["fileName"],
             pageCount=uploadResult["pageCount"],
-            chunks=[{"text": c["text"]} for c in uploadResult["chunks"]]
+            chunks=[{"text": c["text"]} for c in uploadResult.get("chunks", [])],
+            tables=uploadResult.get("tables", []),
+            images=uploadResult.get("images", [])
         )
     except Exception as e:
         logger.error(f"Failed to process PDF {file.filename}: {e}")

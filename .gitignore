@@ -23,6 +23,7 @@ chunked_output/
 ingested_data/
 extracted_images/
 project_structure.txt
+output_json/
 
 # Embeddings & Models
 embeddings_cache/

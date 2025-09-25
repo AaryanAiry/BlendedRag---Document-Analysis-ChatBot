@@ -6,7 +6,7 @@ from app.retrieval.queryRefiner import refine_query_intelligent
 from app.embeddings.embeddingClient import EmbeddingClient
 from app.storage.documentStore import documentStore
 from app.utils.logger import getLogger
-from app.chromaClient import chromaClient, collection  # Shared Chroma client & collection
+from app.chromaClient import chromaClient  # ✅ Changed: removed 'collection', use chromaClient.chunks instead
 
 router = APIRouter()
 logger = getLogger(__name__)
@@ -62,9 +62,11 @@ def chromaRetrieveTopK(doc_id: str, query: str, topK: int = 5):
     """Perform similarity search using ChromaDB for a specific document."""
     query_embedding = embedding_client.generateEmbedding(query)
     query_embedding_2d = query_embedding.reshape(1, -1).tolist()
-    results = collection.query(
+
+    # ✅ Updated: use chromaClient.chunks instead of 'collection'
+    results = chromaClient.chunks.query(
         query_embeddings=query_embedding_2d,
-        where={"docId": doc_id},
+        where={"doc_id": doc_id},  # ✅ Updated: metadata key matches what is stored in ChromaClient
         n_results=topK
     )
 
@@ -72,7 +74,7 @@ def chromaRetrieveTopK(doc_id: str, query: str, topK: int = 5):
     if results and len(results.get("documents", [])) > 0:
         for i, text in enumerate(results["documents"][0]):
             chunks.append({
-                "chunkIndex": results["metadatas"][0][i]["chunkIndex"],
+                "chunkIndex": results["metadatas"][0][i].get("chunkIndex", i),  # fallback if chunkIndex not present
                 "text": text,
                 "score": float(results["distances"][0][i])
             })
