@@ -1,7 +1,15 @@
 from fastapi import FastAPI
 from app.routes import healthRoutes, pdfRoutes, queryRoutes, documentRoutes,ragRoutes
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Blended RAG Chatbot")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 #Registering routes
 app.include_router(healthRoutes.router, prefix="/health",tags=["Health"])

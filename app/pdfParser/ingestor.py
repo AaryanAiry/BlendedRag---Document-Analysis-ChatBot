@@ -1,3 +1,4 @@
+# app/pdfParser/ingestor.py
 import uuid
 import os
 from fastapi import UploadFile
@@ -13,14 +14,12 @@ uploadDir = "data/uploads"
 logger = getLogger(__name__)
 embeddingClient = EmbeddingClient()
 
-# tuned sizes: increase chunk size and overlap to improve semantic continuity
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 100
 
 async def processPdf(file: UploadFile):
     os.makedirs(uploadDir, exist_ok=True)
     try:
-        # --- Step 0: Generate docId and save PDF ---
         docId = str(uuid.uuid4())
         filePath = os.path.join(uploadDir, f"{docId}_{file.filename}")
         logger.info(f"Starting ingestion for: {file.filename}, saving as: {filePath}")
@@ -31,47 +30,48 @@ async def processPdf(file: UploadFile):
         with open(filePath, "wb") as f:
             f.write(contents)
 
-        # --- Step 1: Extract structured layout from PDF ---
         pdf_json = extract_pdf_layout(filePath, docId=docId, chromaClient=chromaClient, save_file=False)
         logger.info(f"Extracted structured PDF layout with {len(pdf_json['pages'])} pages")
 
-        # --- Step 2: Chunk text per page and generate embeddings ---
         all_chunks = []
 
         for page in pdf_json["pages"]:
             page_text = " ".join([e["content"] for e in page["elements"] if e["type"] == "textbox"])
-            page_chunks = chunkText(page_text, chunkSize=CHUNK_SIZE, chunkOverlap=CHUNK_OVERLAP, docId=docId, page_number=page["page_number"])
+
+            page_chunks = chunkText(
+                page_text,
+                chunkSize=CHUNK_SIZE,
+                chunkOverlap=CHUNK_OVERLAP,
+                docId=docId,
+                page_number=page["page_number"]
+            )
 
             chunk_texts = [c["text"] for c in page_chunks]
             chunk_ids = [c["id"] for c in page_chunks]
-
             embeddings = embeddingClient.generateEmbeddings(chunk_texts)
 
-            # BM25 indexing (sparse retriever)
+            # BM25 indexing
             sparseRetriever.indexDocument(docId, chunk_texts, chunk_ids)
 
-            # Save chunks to Chroma -> MUST go into "chunks" collection
+            # Chroma storage with extended metadata
             for i, chunk in enumerate(page_chunks):
                 chromaClient.add_chunk(
                     chunk_id=chunk["id"],
                     embedding=embeddings[i].tolist(),
                     text=chunk["text"],
                     doc_id=docId,
-                    page=page["page_number"]
+                    page=page["page_number"],
+                    type_="text"
                 )
 
             all_chunks.extend(page_chunks)
 
         logger.info(f"Processed {len(all_chunks)} text chunks for docId={docId}")
 
-        # chromaClient.client.persist()  # persist tends to raise issues in some setups; keep commented
-        logger.info(f"ChromaDB persisted for docId={docId} (persist skipped/commented)")
-
-        # --- Step 3: Save lightweight metadata ---
         documentStore.saveDocument(docId, {
             "fileName": file.filename,
             "pageCount": len(pdf_json["pages"]),
-            "chunks": all_chunks  # already has id + text
+            "chunks": all_chunks
         })
 
         return {

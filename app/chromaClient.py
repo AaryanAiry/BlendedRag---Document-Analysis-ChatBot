@@ -36,6 +36,7 @@ class ChromaClient:
     # ---------------- Chunks ----------------
     def add_chunk(self, chunk_id: str, embedding: list, text: str, doc_id: str, page: int, type_: str = "text"):
         metadata = {"doc_id": doc_id, "page": page, "type": type_}
+
         self.chunks.add(
             ids=[chunk_id],
             embeddings=[embedding],
@@ -109,4 +110,6 @@ if __name__ == "__main__":
     print("🔎 Query Results:", results)
 
 chromaClient = ChromaClient()
+
+
 

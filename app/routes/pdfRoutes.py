@@ -37,3 +37,4 @@ async def processPdfEndpoint(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Failed to process PDF {file.filename}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+

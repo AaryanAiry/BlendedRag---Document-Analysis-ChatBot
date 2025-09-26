@@ -18,3 +18,4 @@ class RAGRequest(BaseModel):
 async def ask_rag(req: RAGRequest):
     out = run_pipeline(req.docId, req.query, top_k=req.topK, debug=True)
     return out
+
