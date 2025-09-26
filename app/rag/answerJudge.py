@@ -3,7 +3,7 @@ from typing import List, Dict
 import json
 import re
 from app.llm.llmClient import llmClient  # Qwen2.5-3B
-from app.llm.mistralClient import mistralClient  # optional Mistral for judging
+from app.llm.mistralClient import mistralClient  # Mistral for judging
 from app.utils.logger import getLogger
 
 logger = getLogger(__name__)
@@ -11,7 +11,7 @@ logger = getLogger(__name__)
 class AnswerJudge:
     def __init__(self):
         self.llm_primary = llmClient
-        self.llm_judge = mistralClient  # use Mistral-7B for secondary judgment
+        self.llm_judge = mistralClient  # Mistral-7B
 
     def _parse_json_from_text(self, text: str):
         m = re.search(r"\{.*\}", text, re.S)
@@ -44,33 +44,38 @@ class AnswerJudge:
             logger.debug(f"Heuristic overlap scoring failed: {e}")
             heuristic_score = 0.5
 
-        # --- Optional secondary LLM judgment using Mistral ---
-        prompt = f"""
-You are a judge. Check if the assistant's answer directly matches the provided context chunks.
-Answer only "Y" if it is fully supported, else "N".
+        # --- LLM judgment using Mistral ---
+        final_score = heuristic_score
+        method = "overlap_only"
+        llm_judged = "N/A"
+
+        try:
+            prompt = f"""
+You are a judge. Check if the assistant's answer is fully supported by the provided context chunks.
+Answer only "Y" if fully supported, else "N".
 Question: "{query}"
 Answer: "{answer}"
 Context chunks (text only, short snippets):
 {chr(10).join([c.get('chunk', {}).get('text', '')[:200] if isinstance(c.get('chunk'), dict) else str(c.get('chunk',''))[:200] for c in context_chunks])}
 """
-        try:
             llm_out = self.llm_judge.generateAnswer(prompt, max_tokens=64, temperature=0.0)
             llm_out_clean = llm_out.strip().upper()
-            if "Y" in llm_out_clean:
+            llm_judged = "Y" if "Y" in llm_out_clean else "N"
+
+            if llm_judged == "Y":
                 final_score = max(heuristic_score, 0.8)
                 method = "llm+overlap"
             else:
                 final_score = min(heuristic_score, 0.7)
                 method = "llm+overlap"
+
         except Exception as e:
             logger.debug(f"Mistral judge failed, fallback to heuristic: {e}")
             final_score = heuristic_score
             method = "overlap_only"
 
-        reason = f"Heuristic overlap fraction={heuristic_score:.2f}, LLM judged supported={('Y' in llm_out_clean) if 'llm_out_clean' in locals() else 'N/A'}"
+        reason = f"Heuristic overlap fraction={heuristic_score:.2f}, LLM judged supported={llm_judged}"
         return {"score": round(final_score, 3), "method": method, "reason": reason}
-
 
 # singleton
 answerJudge = AnswerJudge()
-

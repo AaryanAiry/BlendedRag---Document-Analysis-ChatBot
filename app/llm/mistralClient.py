@@ -1,4 +1,4 @@
-# app/llm/llmClient.py
+# app/llm/mistralClient.py
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from app.utils.logger import getLogger
@@ -8,10 +8,6 @@ logger = getLogger(__name__)
 
 class MistralClient:
     def __init__(self, model_dir: str = "app/llm/models/Mistral-7B-v0.1"):
-        """
-        Initializes the LLM client for local Mistral 7B (PyTorch) inference.
-        Uses GPU if available.
-        """
         self.model_dir = model_dir
         if not os.path.exists(self.model_dir):
             raise ValueError(f"Model path does not exist: {self.model_dir}")
@@ -31,9 +27,10 @@ class MistralClient:
             logger.error(f"Failed to load Mistral 7B model: {e}")
             raise e
 
-    def generateAnswer(self, prompt: str, max_tokens: int = 512, temperature: float = 0.7) -> str:
+    def generateAnswer(self, prompt: str, max_tokens: int = 512, temperature: float = 0.0) -> str:
         """
         Generate an answer for the given prompt using Mistral 7B.
+        Greedy decoding if temperature <= 0 (useful for deterministic Y/N for judging)
         """
         try:
             inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
@@ -43,12 +40,11 @@ class MistralClient:
                 "pad_token_id": self.tokenizer.eos_token_id,
             }
 
-            # If user sets temperature <= 0, switch to greedy decoding
             if temperature and temperature > 0:
                 generation_kwargs["temperature"] = temperature
                 generation_kwargs["do_sample"] = True
             else:
-                generation_kwargs["do_sample"] = False  # greedy mode
+                generation_kwargs["do_sample"] = False  # deterministic greedy
 
             output_ids = self.model.generate(**inputs, **generation_kwargs)
             return self.tokenizer.decode(output_ids[0], skip_special_tokens=True)
@@ -57,24 +53,5 @@ class MistralClient:
             logger.error(f"Mistral generation failed: {e}")
             return "Error: Failed to generate answer."
 
-    # def generateAnswer(self, prompt: str, max_tokens: int = 512, temperature: float = 0.7) -> str:
-    #     """
-    #     Generate an answer for the given prompt using Mistral 7B.
-    #     """
-    #     try:
-    #         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
-    #         output_ids = self.model.generate(
-    #             **inputs,
-    #             max_new_tokens=max_tokens,
-    #             temperature=temperature,
-    #             do_sample=True,
-    #             pad_token_id=self.tokenizer.eos_token_id
-    #         )
-    #         return self.tokenizer.decode(output_ids[0], skip_special_tokens=True)
-    #     except Exception as e:
-    #         logger.error(f"Mistral generation failed: {e}")
-    #         return "Error: Failed to generate answer."
-
-
-# Singleton instance for reuse
+# singleton
 mistralClient = MistralClient()

@@ -41,3 +41,4 @@ class DocumentStore:
             return False
 
 documentStore = DocumentStore()
+

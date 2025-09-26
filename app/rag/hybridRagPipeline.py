@@ -8,10 +8,12 @@ from app.llm.llmClient import llmClient
 from app.rag.postProcessor import post_process_answer
 from app.rag.answerJudge import answerJudge
 from app.storage.documentStore import documentStore
+from app.rag.answerRefiner import refine_final_answer, normalize_chunks
+from app.llm import sourceCiter
 
 logger = getLogger(__name__)
 
-# Optional iterative retriever - import if available
+# Optional iterative retriever
 try:
     from app.retrieval.iterativeRetriever import IterativeRetriever
     iterative_available = True
@@ -23,19 +25,20 @@ except Exception:
 
 def _build_prompt(query: str, context_chunks: List[Dict], max_context_tokens: int = 800) -> str:
     """
-    Simple prompt builder: include numbered chunks up to token limit.
+    Builds a prompt using normalized chunks only.
+    Assumes each chunk has 'chunk' dict with 'text' and a top-level 'page'.
     """
     accumulated = 0
     parts = []
     for i, c in enumerate(context_chunks, start=1):
-        text = c.get("chunk", {}).get("text") if isinstance(c.get("chunk"), dict) else c.get("chunk", str(c))
-        snippet = (text or "")[:2000]
+        snippet = c["chunk"]["text"][:2000]
         est_tokens = len(snippet) // 4
         if accumulated + est_tokens > max_context_tokens:
             break
-        page = c.get("chunk", {}).get("meta", {}).get("page", "?") if isinstance(c.get("chunk"), dict) else c.get("page", "?")
+        page = c.get("page", "?")
         parts.append(f"[{i}] (page={page})\n{snippet}")
         accumulated += est_tokens
+
     context_block = "\n\n".join(parts)
     prompt = (
         "Answer the question using ONLY the provided context. If not present, say you don't know.\n\n"
@@ -54,11 +57,6 @@ def run_pipeline(
     iterative: bool = True,
     debug: bool = False
 ) -> Dict[str, Any]:
-    """
-    Orchestrate full hybrid RAG.
-    Returns dict with keys:
-      - finalAnswer, rawAnswer, judge (score+reason), chunksUsed, citations (if any), debug
-    """
     result: Dict[str, Any] = {"docId": doc_id, "originalQuery": user_query, "finalAnswer": None}
     doc_meta = documentStore.getDocument(doc_id)
     if not doc_meta:
@@ -73,13 +71,9 @@ def run_pipeline(
         refined = user_query
     result["refinedQuery"] = refined
 
-    # Step 2: Retrieve (blended)
+    # Step 2: Retrieve
     retrieve_k = max(top_k * 3, 10)
     retrieved = blendedRetriever.query(doc_id, refined, top_k=retrieve_k)
-    if debug:
-        result["retrieved_raw"] = retrieved
-
-    # Optional iterative retrieval
     if iterative and iterative_available:
         try:
             iterative_docs = iterative_retriever.retrieve(refined, doc_id, collection_name=None, top_k=retrieve_k)
@@ -89,52 +83,33 @@ def run_pipeline(
             logger.debug(f"Iterative retrieval failed/ignored: {e}")
 
     # Step 3: Rerank
-    candidates = retrieved
-    if rerank and candidates:
-        try:
-            reranked = reranker.rerank(refined, candidates, top_k=top_k)
-        except Exception as e:
-            logger.exception(f"Reranker failed, falling back: {e}")
-            reranked = candidates[:top_k]
-    else:
-        reranked = candidates[:top_k]
+    try:
+        reranked = reranker.rerank(refined, retrieved, top_k=top_k) if rerank and retrieved else retrieved[:top_k]
+    except Exception as e:
+        logger.exception(f"Reranker failed, falling back: {e}")
+        reranked = retrieved[:top_k]
 
-    # Normalize selected chunks
-    context_chunks: List[Dict] = []
-    for r in reranked:
-        chunk_obj = r.get("chunk") if isinstance(r, dict) else r
-        item = {
-            "chunk": chunk_obj,
-            "score": r.get("rerank_score", r.get("score", 0)),
-        }
-        if isinstance(chunk_obj, dict):
-            meta = chunk_obj.get("meta", {})
-            item["page"] = meta.get("page") or meta.get("page_num") or meta.get("pageNumber")
-        else:
-            item["page"] = None
-        context_chunks.append(item)
-
+    # Step 4: Normalize chunks
+    context_chunks: List[Dict] = normalize_chunks(reranked)
     result["chunksUsed"] = [
-        {"id": (c['chunk'].get('id') if isinstance(c['chunk'], dict) else None),
-         "page": c.get("page"),
-         "score": c.get("score")}
+        {"id": c['chunk'].get('id'), "page": c.get("page"), "score": c.get("score")}
         for c in context_chunks
     ]
 
-    # Step 4: Build prompt and generate answer
+    # Step 5: Build prompt and generate answer
     prompt = _build_prompt(user_query, context_chunks, max_context_tokens=1200)
     try:
-        raw_answer = llmClient.generateAnswer(prompt, max_tokens=512, temperature=0.0)
+        raw_answer = llmClient.generateAnswer(prompt, max_tokens=512, temperature=0.7)
     except Exception as e:
         logger.exception(f"LLM generation failed: {e}")
         return {"error": "LLM generation failed", "details": str(e)}
     result["rawAnswer"] = raw_answer
 
-    # Step 5: Judge answer using 0-1 float score
+    # Step 6: Judge answer
     judge = answerJudge.score_answer(user_query, raw_answer, context_chunks)
     result["judge"] = judge
 
-    # Refinement loop for low-confidence answers
+    # Step 7: Refinement loop
     attempts = 0
     max_attempts = 2
     while judge.get("score", 0) < judge_threshold and attempts < max_attempts:
@@ -146,7 +121,7 @@ def run_pipeline(
               "Please re-check the context and produce a concise answer focusing only on facts present in the context."
         )
         try:
-            raw_answer = llmClient.generateAnswer(refine_prompt, max_tokens=512, temperature=0.0)
+            raw_answer = llmClient.generateAnswer(refine_prompt, max_tokens=512, temperature=0.7)
             result[f"rawAnswer_attempt_{attempts}"] = raw_answer
             judge = answerJudge.score_answer(user_query, raw_answer, context_chunks)
             result.setdefault("judge_attempts", []).append(judge)
@@ -156,19 +131,20 @@ def run_pipeline(
             logger.debug(f"Refinement attempt failed: {e}")
             break
 
-    # Step 6: Post-process answer & attach metadata for citations
-    final_answer = post_process_answer(raw_answer, user_query, context_chunks)
+    # Step 8: Post-process and attach citations
+    final_answer = refine_final_answer(raw_answer, user_query, context_chunks)
+    final_answer = sourceCiter.sourceCiter.cite_sources(user_query, final_answer, context_chunks)
     result["finalAnswer"] = final_answer
     result["attempts"] = attempts
 
-    citations = []
-    for i, c in enumerate(context_chunks, start=1):
-        cid = c["chunk"].get("id") if isinstance(c["chunk"], dict) else None
-        page = c.get("page")
-        citations.append({"rank": i, "chunk_id": cid, "page": page})
+    citations = [
+        {"rank": i, "chunk_id": c["chunk"].get("id"), "page": c.get("page")}
+        for i, c in enumerate(context_chunks, start=1)
+    ]
     result["citations"] = citations
 
     if debug:
         result["context_chunks_debug"] = context_chunks
 
     return result
+

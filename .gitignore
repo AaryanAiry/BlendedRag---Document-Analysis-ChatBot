@@ -72,3 +72,4 @@ dev-start.sh
 app/rag-ui
 /app/rag-ui/
 app/rag-ui/
+node_modules/
