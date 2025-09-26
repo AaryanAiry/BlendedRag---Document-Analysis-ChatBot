@@ -70,3 +70,5 @@ dev-start.sh
 *.bak
 *.tmp
 app/rag-ui
+/app/rag-ui/
+app/rag-ui/
