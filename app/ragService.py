@@ -5,8 +5,8 @@ from app.storage.documentStore import documentStore
 from app.retrieval.queryRefiner import refine_query_intelligent
 from app.retrieval.blendedRetriever import blendedRetriever
 from app.embeddings.embeddingClient import EmbeddingClient
-from app.llm.llmClient import llmClient  # Qwen wrapper
-from app.llm.postProcessor import post_process_answer 
+from app.llm.llmClient import llmClient
+from app.rag.postProcessor import post_process_answer 
 from app.routes.queryRoutes import getTopSentences
 
 logger = getLogger(__name__)

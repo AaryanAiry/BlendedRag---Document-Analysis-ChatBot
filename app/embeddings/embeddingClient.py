@@ -10,3 +10,4 @@ class EmbeddingClient:
     
     def generateEmbedding(self, text: str) -> np.ndarray:
         return self.generateEmbeddings([text])[0]
+

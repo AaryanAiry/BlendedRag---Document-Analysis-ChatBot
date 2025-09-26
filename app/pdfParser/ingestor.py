@@ -12,8 +12,10 @@ from app.chromaClient import chromaClient
 uploadDir = "data/uploads"
 logger = getLogger(__name__)
 embeddingClient = EmbeddingClient()
-CHUNK_SIZE = 1000
-CHUNK_OVERLAP = 200
+
+# tuned sizes: increase chunk size and overlap to improve semantic continuity
+CHUNK_SIZE = 500
+CHUNK_OVERLAP = 100
 
 async def processPdf(file: UploadFile):
     os.makedirs(uploadDir, exist_ok=True)
@@ -35,53 +37,54 @@ async def processPdf(file: UploadFile):
 
         # --- Step 2: Chunk text per page and generate embeddings ---
         all_chunks = []
-        all_chunk_ids = []
 
         for page in pdf_json["pages"]:
             page_text = " ".join([e["content"] for e in page["elements"] if e["type"] == "textbox"])
-            chunks = chunkText(page_text, chunkSize=CHUNK_SIZE, chunkOverlap=CHUNK_OVERLAP)
+            page_chunks = chunkText(page_text, chunkSize=CHUNK_SIZE, chunkOverlap=CHUNK_OVERLAP, docId=docId, page_number=page["page_number"])
 
-            embeddings = embeddingClient.generateEmbeddings(chunks)
-            page_chunk_ids = [f"{docId}_page{page['page_number']}_chunk{i}" for i in range(len(chunks))]
+            chunk_texts = [c["text"] for c in page_chunks]
+            chunk_ids = [c["id"] for c in page_chunks]
+
+            embeddings = embeddingClient.generateEmbeddings(chunk_texts)
 
             # BM25 indexing (sparse retriever)
-            sparseRetriever.indexDocument(docId, chunks, page_chunk_ids)
+            sparseRetriever.indexDocument(docId, chunk_texts, chunk_ids)
 
             # Save chunks to Chroma -> MUST go into "chunks" collection
-            for i, chunk in enumerate(chunks):
+            for i, chunk in enumerate(page_chunks):
                 chromaClient.add_chunk(
-                    chunk_id=page_chunk_ids[i],
+                    chunk_id=chunk["id"],
                     embedding=embeddings[i].tolist(),
-                    text=chunk,
+                    text=chunk["text"],
                     doc_id=docId,
                     page=page["page_number"]
                 )
 
-            all_chunks.extend(chunks)
-            all_chunk_ids.extend(page_chunk_ids)
+            all_chunks.extend(page_chunks)
 
         logger.info(f"Processed {len(all_chunks)} text chunks for docId={docId}")
 
-        # chromaClient.client.persist()  # <--- ADD THIS LINE
-        # logger.info(f"ChromaDB persisted for docId={docId}")
+        # chromaClient.client.persist()  # persist tends to raise issues in some setups; keep commented
+        logger.info(f"ChromaDB persisted for docId={docId} (persist skipped/commented)")
 
         # --- Step 3: Save lightweight metadata ---
         documentStore.saveDocument(docId, {
             "fileName": file.filename,
             "pageCount": len(pdf_json["pages"]),
-            "chunks": [{"text": c} for c in all_chunks]
+            "chunks": all_chunks  # already has id + text
         })
 
         return {
             "docId": docId,
             "fileName": file.filename,
             "pageCount": len(pdf_json["pages"]),
-            "chunks": [{"text": c} for c in all_chunks]
+            "chunks": all_chunks
         }
 
     except Exception as e:
         logger.error(f"Ingestion failed for {file.filename}: {e}")
         raise
+
 
 
 

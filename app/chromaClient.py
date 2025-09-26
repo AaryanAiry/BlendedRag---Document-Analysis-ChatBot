@@ -2,23 +2,33 @@ import os
 from chromadb import Client
 from chromadb.config import Settings
 
-# ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-# DB_DIR = os.path.join(ROOT_DIR, "app", "data", "chroma")
-
-DB_DIR = "data/chroma"  # short path to avoid "File name too long"
+# short path to avoid "File name too long"
+DB_DIR = "data/chroma"
 
 class ChromaClient:
     def __init__(self, db_dir: str = DB_DIR):
-        # os.makedirs(db_dir, exist_ok=True)
-
+        # NOTE: We keep using the default settings here. If you want persistence,
+        # set persist_directory=db_dir in Settings() and ensure chroma version supports it.
         self.client = Client(Settings(
+            persist_directory=db_dir,
             anonymized_telemetry=False  # Disable telemetry
         ))
 
-        # Initialize collections
-        self.chunks = self.client.get_or_create_collection("chunks")
-        self.tables = self.client.get_or_create_collection("tables")
-        self.images = self.client.get_or_create_collection("images")
+        # Initialize collections and prefer cosine if possible via metadata hints.
+        # Some Chroma releases accept "hnsw:space": "cosine" as a metadata hint.
+        try:
+            self.chunks = self.client.get_or_create_collection("chunks", metadata={"hnsw:space": "cosine"})
+        except TypeError:
+            # older/newer signatures may not accept metadata param - fall back
+            self.chunks = self.client.get_or_create_collection("chunks")
+        try:
+            self.tables = self.client.get_or_create_collection("tables", metadata={"hnsw:space": "cosine"})
+        except TypeError:
+            self.tables = self.client.get_or_create_collection("tables")
+        try:
+            self.images = self.client.get_or_create_collection("images", metadata={"hnsw:space": "cosine"})
+        except TypeError:
+            self.images = self.client.get_or_create_collection("images")
 
     def get_or_create_collection(self, name: str):
         return self.client.get_or_create_collection(name)
@@ -34,8 +44,11 @@ class ChromaClient:
         )
         print(f"✅ Chunk added: {chunk_id}, text len={len(text)}, embedding len={len(embedding)}")
 
-    def query_chunks(self, query_embedding: list, n_results: int = 5):
-        return self.chunks.query(query_embeddings=[query_embedding], n_results=n_results)
+    def query_chunks(self, query_embedding: list, n_results: int = 5, where: dict = None):
+        # expose a small wrapper; allow passing `where` metadata filter if needed
+        if where:
+            return self.chunks.query(query_embeddings=[query_embedding], n_results=n_results, where=where, include=["documents", "metadatas", "distances", "ids"])
+        return self.chunks.query(query_embeddings=[query_embedding], n_results=n_results, include=["documents", "metadatas", "distances", "ids"])
 
     # ---------------- Tables ----------------
     def add_table(self, table_id: str, embedding: list, table_json: str, doc_id: str, page: int):
@@ -48,7 +61,7 @@ class ChromaClient:
         )
 
     def query_tables(self, query_embedding: list, n_results: int = 3):
-        return self.tables.query(query_embeddings=[query_embedding], n_results=n_results)
+        return self.tables.query(query_embeddings=[query_embedding], n_results=n_results, include=["documents", "metadatas", "distances", "ids"])
 
     # ---------------- Images ----------------
     def add_image(self, image_id: str, embedding: list, doc_id: str, page: int, document_ref: str = None):
@@ -62,22 +75,25 @@ class ChromaClient:
         )
 
     def query_images(self, query_embedding: list, n_results: int = 3):
-        return self.images.query(query_embeddings=[query_embedding], n_results=n_results)
+        return self.images.query(query_embeddings=[query_embedding], n_results=n_results, include=["documents", "metadatas", "distances", "ids"])
 
     def list_collections(self):
         return self.client.list_collections()
     
     def count_chunks(self):
-        return self.chunks.count()
+        try:
+            return self.chunks.count()
+        except Exception:
+            return None
 
 # ---------------- Debug run ----------------
 if __name__ == "__main__":
     cc = ChromaClient()
 
     print("✅ Chroma collections initialized:")
-    print(" -", cc.chunks.name)
-    print(" -", cc.tables.name)
-    print(" -", cc.images.name)
+    print(" -", getattr(cc.chunks, "name", "chunks"))
+    print(" -", getattr(cc.tables, "name", "tables"))
+    print(" -", getattr(cc.images, "name", "images"))
 
     # --- Test inserting a dummy chunk ---
     cc.add_chunk(
@@ -93,3 +109,4 @@ if __name__ == "__main__":
     print("🔎 Query Results:", results)
 
 chromaClient = ChromaClient()
+

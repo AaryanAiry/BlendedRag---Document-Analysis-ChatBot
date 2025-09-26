@@ -4,6 +4,8 @@ import re
 from typing import Dict, List
 from app.llm.llmClient import llmClient
 from app.rag.prompts import RQ_PROMPT
+from app.embeddings.embeddingClient import EmbeddingClient
+import numpy as np
 
 _stopwords = {
     "the","is","at","which","on","a","an","and","or","in","for","to","of","by","with","as","that","this"
@@ -14,6 +16,9 @@ _synonymMap = {
     "error": ["issue", "problem", "fault"],
     "summary": ["overview", "abstract"]
 }
+
+embeddingClient = EmbeddingClient()
+SIMILARITY_THRESHOLD = 0.75
 
 def _basic_preprocess(query: str) -> str:
     q = query.strip().lower()
@@ -57,6 +62,12 @@ def _extract_json(s: str) -> str:
         raise ValueError("No JSON object found in LLM output.")
     return s[start:end+1]
 
+def _semantic_similarity(text1: str, text2: str) -> float:
+    emb1 = embeddingClient.generateEmbedding(text1)
+    emb2 = embeddingClient.generateEmbedding(text2)
+    sim = np.dot(emb1, emb2) / (np.linalg.norm(emb1) * np.linalg.norm(emb2))
+    return float(sim)
+
 def refine_query_intelligent(query: str) -> Dict:
     original = query
     refinedQuery = None
@@ -69,7 +80,12 @@ def refine_query_intelligent(query: str) -> Dict:
         prompt = RQ_PROMPT.format(question=original)
         raw = llmClient.generateAnswer(prompt, max_tokens=256)
         data = json.loads(_extract_json(raw))
-        refinedQuery = data.get("refinedQuery") or data.get("refined_query")
+        refinedQueryCandidate = data.get("refinedQuery") or data.get("refined_query")
+        # Check semantic similarity
+        if refinedQueryCandidate and _semantic_similarity(original, refinedQueryCandidate) >= SIMILARITY_THRESHOLD:
+            refinedQuery = refinedQueryCandidate
+        else:
+            refinedQuery = original
         subQueries = data.get("subQueries") or data.get("sub_queries") or []
         keywords = data.get("keywords") or []
         intent = (data.get("intent") or "generic").lower()
