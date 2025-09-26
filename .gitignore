@@ -69,3 +69,4 @@ tests/__pycache__/
 dev-start.sh
 *.bak
 *.tmp
+app/rag-ui
