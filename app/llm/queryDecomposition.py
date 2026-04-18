@@ -33,7 +33,7 @@ Take the following complex question and break it down into multiple smaller,
 executable sub-queries. Each sub-query should be something that could be run
 independently against a knowledge base.
 
-⚠️ Output must be a valid JSON array of strings and nothing else.
+Output must be a valid JSON array of strings and nothing else.
 
 Example:
 Question: "Fetch sales data from 2020 to 2022"
