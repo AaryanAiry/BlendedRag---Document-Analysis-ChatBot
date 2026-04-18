@@ -6,7 +6,7 @@ from app.retrieval.queryRefiner import refine_query_intelligent
 from app.embeddings.embeddingClient import EmbeddingClient
 from app.storage.documentStore import documentStore
 from app.utils.logger import getLogger
-from app.chromaClient import chromaClient  # ✅ Changed: removed 'collection', use chromaClient.chunks instead
+from app.chromaClient import chromaClient  # Changed: removed 'collection', use chromaClient.chunks instead
 
 router = APIRouter()
 logger = getLogger(__name__)
